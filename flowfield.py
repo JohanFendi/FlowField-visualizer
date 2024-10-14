@@ -1,6 +1,6 @@
 import pygame as pg
 from collections import deque
-
+import math
 
 
 class Cell:
@@ -14,6 +14,7 @@ class Cell:
         self.y_cord = y_cord
         self.x_vector = 0
         self.y_vector = 0
+        self.vector_length = int(self.width / 2)
         self.cost = 0
         self.color = (255,255,255)
         self.type = Cell.path
@@ -34,8 +35,25 @@ class Cell:
             self.type = Cell.path
 
 
+    def draw_vector(self, window):
+        center_x = (self.x_cord + 0.5) * self.width 
+        center_y = (self.y_cord + 0.5) * self.width
+        vector_tip_x = center_x + self.x_vector * self.vector_length
+        vector_tip_y = center_y + self.y_vector * self.vector_length
+        vector_angle = math.atan2(self.y_vector, self.x_vector)
+
+        vector_left_tip_x = center_x + (math.cos(vector_angle - 0.5)  * self.vector_length *0.75)
+        vector_left_tip_y = center_y + (math.sin(vector_angle - 0.5)  * self.vector_length *0.75)
+        vector_right_tip_x = center_x + (math.cos(vector_angle + 0.5)  * self.vector_length *0.75)
+        vector_right_tip_y = center_y + (math.sin(vector_angle + 0.5)  * self.vector_length *0.75)
+
+        pg.draw.line(window, (0,0,0), (center_x, center_y), (vector_tip_x, vector_tip_y), 1)
+        pg.draw.line(window, (0,0,0), (vector_tip_x, vector_tip_y), (vector_left_tip_x, vector_left_tip_y), 1)
+        pg.draw.line(window, (0,0,0), (vector_tip_x, vector_tip_y), (vector_right_tip_x, vector_right_tip_y), 1)
+
+
 class Flow_field:
-    normalized_vec = 0.707
+    normalized_vec = 1 / math.sqrt(2)
     def __init__(self, map_width, map_height, cell_width, source_x, source_y):
         self.map_width = map_width
         self.map_height = map_height
@@ -43,6 +61,12 @@ class Flow_field:
         self.grid = self.create_grid()
         self.source = self.grid[source_y][source_x]
         self.grid[source_y][source_x].type = Cell.source
+
+    
+    def update_source(self, new_source_x, new_source_y):
+        self.source.type = Cell.path
+        self.source = self.grid[new_source_y][new_source_x]
+        self.source.type = Cell.source
 
 
     def create_grid(self):
@@ -59,6 +83,8 @@ class Flow_field:
         for row in self.grid:
             for cell in row:
                 cell.draw(window)
+                if cell != self.source:
+                    cell.draw_vector(window)
     
 
     def generate_cost_field(self):
@@ -78,9 +104,30 @@ class Flow_field:
         self.get_cell_colours(visited)
     
 
-    def compute_vector_field(self):
-        self.apply_kernel(self.min_neighbour_kernel)
+    def get_neighs_bfs(self, dist, y_cord, x_cord, visited):
+        neighbours = []
+        if y_cord > 0 and (y_cord-1, x_cord) not in visited and self.grid[y_cord-1][x_cord].type == Cell.path:
+            neighbours.append([dist+1, y_cord-1, x_cord])
+            visited.add((y_cord-1, x_cord))
 
+        if x_cord > 0 and (y_cord, x_cord-1) not in visited and self.grid[y_cord][x_cord-1].type == Cell.path:
+            neighbours.append([dist+1, y_cord, x_cord-1])
+            visited.add((y_cord, x_cord-1))
+
+        if y_cord < self.map_height - 1 and (y_cord+1, x_cord) not in visited and self.grid[y_cord+1][x_cord].type == Cell.path:
+            neighbours.append([dist+1, y_cord+1, x_cord])
+            visited.add((y_cord+1, x_cord))
+
+        if x_cord < self.map_width - 1  and (y_cord, x_cord+1) not in visited and self.grid[y_cord][x_cord+1].type == Cell.path:
+            neighbours.append([dist+1, y_cord, x_cord+1])
+            visited.add((y_cord, x_cord+1))
+
+        return neighbours
+
+    
+
+    def generate_vector_field(self):
+        self.apply_kernel(self.min_neighbour_kernel)
         #self.apply_kernel(self.avg_neighbour_kernel)  #One needs to make a copy of the min_neigh_vector field first, then one can change 
 
 
@@ -110,10 +157,6 @@ class Flow_field:
                     continue
                     
                 neigh_cell = self.grid[y_cord2][x_cord2]
-
-                diff_x = neigh_cell.x_cord - x_cord
-                diff_y = neigh_cell.y_cord - y_cord
-                assert -1 <= diff_x <= 1 and -1 <= diff_y <= 1, f"NEIGH_CELL_ERROR" 
                 if neigh_cell.cost < min_cost:
                     min_neighbour = neigh_cell
                     min_cost = neigh_cell.cost
@@ -154,27 +197,6 @@ class Flow_field:
 
         assert -1 <= abs(x_vector) <= 1 and -1 <= abs(y_vector) <= 1, f"VECTORERROR"
 
-               
-    def get_neighs_bfs(self, dist, y_cord, x_cord, visited):
-        neighbours = []
-        if y_cord > 0 and (y_cord-1, x_cord) not in visited and self.grid[y_cord-1][x_cord].type == Cell.path:
-            neighbours.append([dist+1, y_cord-1, x_cord])
-            visited.add((y_cord-1, x_cord))
-
-        if x_cord > 0 and (y_cord, x_cord-1) not in visited and self.grid[y_cord][x_cord-1].type == Cell.path:
-            neighbours.append([dist+1, y_cord, x_cord-1])
-            visited.add((y_cord, x_cord-1))
-
-        if y_cord < self.map_height - 1 and (y_cord+1, x_cord) not in visited and self.grid[y_cord+1][x_cord].type == Cell.path:
-            neighbours.append([dist+1, y_cord+1, x_cord])
-            visited.add((y_cord+1, x_cord))
-
-        if x_cord < self.map_width - 1  and (y_cord, x_cord+1) not in visited and self.grid[y_cord][x_cord+1].type == Cell.path:
-            neighbours.append([dist+1, y_cord, x_cord+1])
-            visited.add((y_cord, x_cord+1))
-
-        return neighbours
-
 
     def get_cell_colours(self, visited):
         for y_cord in range(self.map_height):
@@ -182,7 +204,7 @@ class Flow_field:
                 cell = self.grid[y_cord][x_cord]
                 
                 if cell.type == Cell.source:
-                    cell.color = (255,0,255)
+                    cell.color = (255, 255, 0)
                     continue
                 
                 if cell.type == Cell.wall:
